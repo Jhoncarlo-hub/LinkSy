@@ -1,90 +1,112 @@
 import { useState } from 'react'
-import { View, Text, TextInput, TouchableOpacity, StatusBar, KeyboardAvoidingView, Platform, ScrollView } from 'react-native'
+import { View, Text, TextInput, TouchableOpacity, StatusBar, Alert, ActivityIndicator, ScrollView } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '../lib/supabase'
 
+const C = {
+  bg: '#080b18', input: '#141728', accent: '#7c3aed',
+  border: 'rgba(255,255,255,0.07)', text: '#fff', muted: '#6b7280',
+}
+
+const Field = ({ icon, placeholder, value, onChange, secure, keyboardType, right }: any) => {
+  const [show, setShow] = useState(false)
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center', backgroundColor: C.input,
+      borderRadius: 14, paddingHorizontal: 16, marginBottom: 14,
+      borderWidth: 1, borderColor: C.border
+    }}>
+      <Text style={{ fontSize: 16, marginRight: 10 }}>{icon}</Text>
+      <TextInput
+        value={value} onChangeText={onChange}
+        placeholder={placeholder} placeholderTextColor={C.muted}
+        secureTextEntry={secure && !show}
+        keyboardType={keyboardType || 'default'}
+        autoCapitalize="none"
+        style={{ flex: 1, color: C.text, paddingVertical: 16, fontSize: 15 }}
+      />
+      {secure && (
+        <TouchableOpacity onPress={() => setShow(p => !p)}>
+          <Text style={{ fontSize: 18 }}>{show ? '🙈' : '👁️'}</Text>
+        </TouchableOpacity>
+      )}
+      {right && <Text style={{ color: C.muted, fontSize: 18 }}>→</Text>}
+    </View>
+  )
+}
+
 export default function RegisterScreen({ navigation }: any) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [fullName, setFullName] = useState('')
-  const [username, setUsername] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
+  const [form, setForm] = useState({ fullName: '', username: '', email: '', password: '', confirm: '' })
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const set = (k: string) => (v: string) => setForm(p => ({ ...p, [k]: v }))
 
   const handleRegister = async () => {
-    if (password !== confirmPassword) { setError('Passwords do not match'); return }
-    setLoading(true)
-    setError('')
-    const { data, error: signUpError } = await supabase.auth.signUp({ email, password })
-    if (signUpError) { setError(signUpError.message); setLoading(false); return }
-    if (data.user) {
-      const { error: profileError } = await supabase.from('profiles').insert({
-        id: data.user.id, username, full_name: fullName,
-      })
-      if (profileError) { setError(profileError.message); setLoading(false); return }
-      setSuccess('Account created! Please login to continue.')
-      setTimeout(() => navigation.replace('Login'), 2000)
-    }
-    setLoading(false)
-  }
+    if (!form.fullName || !form.username || !form.email || !form.password)
+      return Alert.alert('Error', 'Fill in all fields')
+    if (form.password !== form.confirm)
+      return Alert.alert('Error', 'Passwords do not match')
 
-  const inputStyle = {
-    backgroundColor: '#161616',
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-    borderRadius: 10,
-    padding: 14,
-    color: '#ffffff',
-    fontSize: 14,
-    marginBottom: 16
+    setLoading(true)
+    const { data, error } = await supabase.auth.signUp({ email: form.email, password: form.password })
+    if (error) { setLoading(false); return Alert.alert('Error', error.message) }
+
+    await supabase.from('profiles').insert({
+      id: data.user!.id,
+      full_name: form.fullName,
+      username: form.username,
+      is_online: true,
+    })
+    setLoading(false)
+    const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user!.id).single()
+    navigation.replace('Chat', { user: profile })
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#0a0a0a' }}>
-      <StatusBar barStyle="light-content" />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 24 }}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginBottom: 32, marginTop: 16 }}>
-            <Text style={{ color: '#6b7280', fontSize: 14 }}>← Back</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: C.bg }}>
+      <StatusBar barStyle="light-content" backgroundColor={C.bg} />
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 20 }}>
+          <Text style={{ color: C.text, fontSize: 26 }}>←</Text>
+        </TouchableOpacity>
+
+        <View style={{ paddingHorizontal: 28, paddingBottom: 40 }}>
+          <Text style={{ color: C.text, fontSize: 28, fontWeight: '800', marginBottom: 6 }}>
+            Create your account ✨
+          </Text>
+          <Text style={{ color: C.muted, fontSize: 14, marginBottom: 32 }}>Sign up to get started</Text>
+
+          <Field icon="👤" placeholder="Enter your full name" value={form.fullName} onChange={set('fullName')} right />
+          <Field icon="@" placeholder="Enter your username" value={form.username} onChange={set('username')} right />
+          <Field icon="✉️" placeholder="Enter your email" value={form.email} onChange={set('email')} keyboardType="email-address" right />
+          <Field icon="🔒" placeholder="Create a password" value={form.password} onChange={set('password')} secure />
+          <Field icon="🔒" placeholder="Confirm your password" value={form.confirm} onChange={set('confirm')} secure />
+
+          <TouchableOpacity
+            onPress={handleRegister} disabled={loading}
+            style={{
+              backgroundColor: C.accent, borderRadius: 16, paddingVertical: 17,
+              flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+              marginTop: 8, marginBottom: 24,
+              shadowColor: C.accent, shadowOpacity: 0.5, shadowRadius: 14, elevation: 7
+            }}
+          >
+            {loading
+              ? <ActivityIndicator color="#fff" />
+              : <>
+                  <Text style={{ color: '#fff', fontSize: 17, fontWeight: '700', marginRight: 10 }}>Sign up</Text>
+                  <Text style={{ color: '#fff', fontSize: 20 }}>→</Text>
+                </>
+            }
           </TouchableOpacity>
-          <Text style={{ fontSize: 28, fontWeight: '800', color: '#ffffff', marginBottom: 8 }}>Create account</Text>
-          <Text style={{ fontSize: 14, color: '#6b7280', marginBottom: 32 }}>Sign up to get started</Text>
-          {error !== '' && (
-            <View style={{ backgroundColor: '#2a1515', borderWidth: 1, borderColor: '#ef4444', borderRadius: 10, padding: 12, marginBottom: 16 }}>
-              <Text style={{ color: '#ef4444', fontSize: 13 }}>{error}</Text>
-            </View>
-          )}
-          {success !== '' && (
-            <View style={{ backgroundColor: '#0f2a1a', borderWidth: 1, borderColor: '#22c55e', borderRadius: 10, padding: 12, marginBottom: 16 }}>
-              <Text style={{ color: '#22c55e', fontSize: 13 }}>{success}</Text>
-            </View>
-          )}
-          <Text style={{ color: '#e5e7eb', fontSize: 13, fontWeight: '600', marginBottom: 8 }}>Full name</Text>
-          <TextInput value={fullName} onChangeText={setFullName} placeholder="Enter your full name" placeholderTextColor="#4b5563" style={inputStyle} />
-          <Text style={{ color: '#e5e7eb', fontSize: 13, fontWeight: '600', marginBottom: 8 }}>Username</Text>
-          <TextInput value={username} onChangeText={setUsername} placeholder="Enter your username" placeholderTextColor="#4b5563" autoCapitalize="none" style={inputStyle} />
-          <Text style={{ color: '#e5e7eb', fontSize: 13, fontWeight: '600', marginBottom: 8 }}>Email</Text>
-          <TextInput value={email} onChangeText={setEmail} placeholder="Enter your email" placeholderTextColor="#4b5563" keyboardType="email-address" autoCapitalize="none" style={inputStyle} />
-          <Text style={{ color: '#e5e7eb', fontSize: 13, fontWeight: '600', marginBottom: 8 }}>Password</Text>
-          <View style={{ position: 'relative', marginBottom: 16 }}>
-            <TextInput value={password} onChangeText={setPassword} placeholder="Create a password" placeholderTextColor="#4b5563" secureTextEntry={!showPassword} style={{ ...inputStyle, marginBottom: 0, paddingRight: 50 }} />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: 14, top: 14 }}>
-              <Text style={{ fontSize: 18 }}>{showPassword ? '🙈' : '👁'}</Text>
+
+          <View style={{ flexDirection: 'row', justifyContent: 'center' }}>
+            <Text style={{ color: C.muted, fontSize: 14 }}>Already have an account? </Text>
+            <TouchableOpacity onPress={() => navigation.replace('Login')}>
+              <Text style={{ color: C.accent, fontSize: 14, fontWeight: '700' }}>Log in</Text>
             </TouchableOpacity>
           </View>
-          <Text style={{ color: '#e5e7eb', fontSize: 13, fontWeight: '600', marginBottom: 8 }}>Confirm password</Text>
-          <TextInput value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Confirm your password" placeholderTextColor="#4b5563" secureTextEntry style={inputStyle} />
-          <TouchableOpacity onPress={handleRegister} disabled={loading} style={{ backgroundColor: '#ffffff', borderRadius: 12, padding: 16, alignItems: 'center', opacity: loading ? 0.7 : 1, marginTop: 8 }}>
-            <Text style={{ color: '#000000', fontSize: 15, fontWeight: '700' }}>{loading ? 'Creating account...' : 'Sign up'}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('Login')} style={{ marginTop: 20, alignItems: 'center', marginBottom: 32 }}>
-            <Text style={{ color: '#6b7280', fontSize: 13 }}>Already have an account? <Text style={{ color: '#ffffff', fontWeight: '700' }}>Login</Text></Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   )
 }
